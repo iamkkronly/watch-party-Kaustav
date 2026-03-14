@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Video Player</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Sync Video Player</h1>
+
+        <div id="admin-login-section">
+            <input type="password" id="admin-password" placeholder="Admin Password">
+            <button id="login-btn">Login as Admin</button>
+            <p id="login-error" class="error"></p>
+        </div>
+
+        <div id="admin-controls" class="hidden">
+            <h3>Admin Controls</h3>
+            <div class="control-group">
+                <input type="text" id="video-url" placeholder="Direct Video URL (e.g., .mp4, .webm)">
+                <button id="load-video-btn">Load Video</button>
+            </div>
+            <p>You have control over the player. Actions will sync to all users.</p>
+        </div>
+
+        <div class="player-container">
+            <video id="video-player" controls preload="auto">
+                Your browser does not support the video tag.
+            </video>
+            <!-- Overlay to block non-admin interaction -->
+            <div id="player-overlay" class="overlay"></div>
+        </div>
+
+        <div class="status">
+            <span id="role-status">Viewing as: Guest</span>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
