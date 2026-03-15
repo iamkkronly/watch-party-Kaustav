@@ -5,6 +5,7 @@ const loginSection = document.getElementById('admin-login-section');
 const passwordInput = document.getElementById('admin-password');
 const loginBtn = document.getElementById('login-btn');
 const loginError = document.getElementById('login-error');
+const secretLoginTrigger = document.getElementById('secret-login-trigger');
 
 const adminControls = document.getElementById('admin-controls');
 const playlistContainer = document.getElementById('playlist-container');
@@ -56,8 +57,16 @@ function setGuestMode() {
     videoPlayer.removeAttribute('controls');
     playerOverlay.classList.remove('admin-mode');
     roleStatus.textContent = 'Viewing as: Guest';
-    loginSection.classList.remove('hidden');
+    loginSection.classList.add('hidden');
     adminControls.classList.add('hidden');
+}
+
+if (secretLoginTrigger) {
+    secretLoginTrigger.addEventListener('click', () => {
+        if (!isAdmin) {
+            loginSection.classList.toggle('hidden');
+        }
+    });
 }
 
 function setAdminMode() {
