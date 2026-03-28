@@ -109,13 +109,22 @@ function getLoadedStreamUrl() {
             const parsed = new URL(candidate, window.location.origin);
             const proxiedUrl = parsed.searchParams.get('url');
             if (proxiedUrl) {
-                return decodeURIComponent(proxiedUrl);
+                return proxiedUrl;
             }
         } catch (e) {
             // Ignore parsing errors and continue trying fallback candidates.
         }
     }
     return '';
+}
+
+function normalizeComparableUrl(rawUrl) {
+    if (!rawUrl) return '';
+    try {
+        return new URL(rawUrl).toString();
+    } catch (e) {
+        return String(rawUrl).trim();
+    }
 }
 
 if (secretLoginTrigger) {
@@ -296,9 +305,18 @@ if (fullRefreshBtn) {
 
 if (safeExitBtn) {
     safeExitBtn.addEventListener('click', () => {
+        if (transitionTimeoutId) {
+            clearTimeout(transitionTimeoutId);
+            transitionTimeoutId = null;
+        }
+        isTransitioningVideo = false;
         socket.emit('admin_logout');
         setGuestMode();
         socket.emit('sync_request');
+        setTimeout(() => {
+            // Ensure newly switched guest state recovers quickly if autoplay was blocked.
+            bypassAutoplay();
+        }, 150);
     });
 }
 
@@ -461,13 +479,16 @@ function updatePlayerState(state) {
     }
 
     const proxyUrl = '/stream?url=' + encodeURIComponent(state.videoUrl);
-    const loadedUrl = getLoadedStreamUrl();
-    const shouldReloadSource = state.videoUrl !== '' && (state.videoUrl !== currentVideoUrl || loadedUrl !== state.videoUrl);
+    const loadedUrl = normalizeComparableUrl(getLoadedStreamUrl());
+    const stateUrl = normalizeComparableUrl(state.videoUrl);
+    const currentUrl = normalizeComparableUrl(currentVideoUrl);
+    const shouldReloadSource = state.videoUrl !== '' && (stateUrl !== currentUrl || loadedUrl !== stateUrl);
 
     if (shouldReloadSource) {
         currentVideoUrl = state.videoUrl;
         videoPlayer.src = proxyUrl;
         videoPlayer.setAttribute('src', proxyUrl);
+        videoPlayer.load();
 
         // Setup separate audio stream if needed
         syncAudioTrack(state.videoUrl, state.audioTrack, state.currentTime, state.isPlaying);
