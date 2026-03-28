@@ -36,15 +36,6 @@ app.use(cors());
 const path = require('path');
 app.use(express.static(path.join(__dirname, 'public')));
 
-function ffprobeAsync(input) {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(input, (err, metadata) => {
-      if (err) return reject(err);
-      resolve(metadata);
-    });
-  });
-}
-
 function isLikelyBrowserSafeType(contentType = '') {
   const type = contentType.toLowerCase();
   return (
@@ -65,16 +56,30 @@ app.get('/stream', async (req, res) => {
   }
 
   try {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(videoUrl);
+    } catch (e) {
+      return res.status(400).send("Invalid video URL.");
+    }
+
     const options = {
       method: 'GET',
       url: videoUrl,
       responseType: 'stream',
+      timeout: 20000,
+      maxRedirects: 10,
+      decompress: false,
       headers: {}
     };
 
     if (range) {
       options.headers['Range'] = range;
     }
+    options.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    options.headers['Accept'] = '*/*';
+    options.headers['Referer'] = `${parsedUrl.protocol}//${parsedUrl.host}/`;
+    options.headers['Origin'] = `${parsedUrl.protocol}//${parsedUrl.host}`;
 
     const response = await axios(options);
 
@@ -98,18 +103,11 @@ app.get('/stream', async (req, res) => {
       contentDisposition.toLowerCase().includes('.mkv') ||
       urlLower.includes('.mkv');
 
-    // Some sources hide MKV behind generic mime-types such as application/octet-stream.
-    // If the type is not obviously browser-safe, inspect metadata and remux MKV/Matroska.
+    // If mime-type is generic/unknown, prefer remuxing to fragmented MP4.
+    // This avoids browser SRC_NOT_SUPPORTED errors on hidden MKV containers
+    // and removes ffprobe latency from request path.
     if (!shouldRemux && !isLikelyBrowserSafeType(contentType)) {
-      try {
-        const metadata = await ffprobeAsync(videoUrl);
-        const formatName = (metadata?.format?.format_name || '').toLowerCase();
-        if (formatName.includes('matroska') || formatName.includes('mkv')) {
-          shouldRemux = true;
-        }
-      } catch (probeErr) {
-        console.warn('ffprobe detection failed, falling back to upstream mime-type:', probeErr.message);
-      }
+      shouldRemux = true;
     }
 
     if (shouldRemux) {
@@ -154,7 +152,9 @@ app.get('/stream', async (req, res) => {
       });
     }
   } catch (error) {
-    if (error.response) {
+    if (error.code === 'ECONNABORTED') {
+      res.status(504).send("Upstream video server timed out.");
+    } else if (error.response) {
       res.status(error.response.status).send(error.message);
     } else {
       res.status(500).send("Error fetching video stream.");
