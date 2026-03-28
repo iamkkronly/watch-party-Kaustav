@@ -36,6 +36,26 @@ app.use(cors());
 const path = require('path');
 app.use(express.static(path.join(__dirname, 'public')));
 
+function ffprobeAsync(input) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(input, (err, metadata) => {
+      if (err) return reject(err);
+      resolve(metadata);
+    });
+  });
+}
+
+function isLikelyBrowserSafeType(contentType = '') {
+  const type = contentType.toLowerCase();
+  return (
+    type.includes('video/mp4') ||
+    type.includes('video/webm') ||
+    type.includes('video/ogg') ||
+    type.includes('application/vnd.apple.mpegurl') ||
+    type.includes('application/x-mpegurl')
+  );
+}
+
 app.get('/stream', async (req, res) => {
   const videoUrl = req.query.url;
   const range = req.headers.range;
@@ -72,10 +92,27 @@ app.get('/stream', async (req, res) => {
     const contentType = response.headers['content-type'] || '';
     const contentDisposition = response.headers['content-disposition'] || '';
     const urlLower = videoUrl.toLowerCase();
+    let shouldRemux =
+      contentType.includes('matroska') ||
+      contentType.includes('mkv') ||
+      contentDisposition.toLowerCase().includes('.mkv') ||
+      urlLower.includes('.mkv');
 
-    if (contentType.includes('matroska') || contentType.includes('mkv') ||
-        contentDisposition.toLowerCase().includes('.mkv') ||
-        urlLower.includes('.mkv')) {
+    // Some sources hide MKV behind generic mime-types such as application/octet-stream.
+    // If the type is not obviously browser-safe, inspect metadata and remux MKV/Matroska.
+    if (!shouldRemux && !isLikelyBrowserSafeType(contentType)) {
+      try {
+        const metadata = await ffprobeAsync(videoUrl);
+        const formatName = (metadata?.format?.format_name || '').toLowerCase();
+        if (formatName.includes('matroska') || formatName.includes('mkv')) {
+          shouldRemux = true;
+        }
+      } catch (probeErr) {
+        console.warn('ffprobe detection failed, falling back to upstream mime-type:', probeErr.message);
+      }
+    }
+
+    if (shouldRemux) {
       // Browsers often support the underlying codecs of an MKV file (like H.264 or HEVC)
       // but reject the MKV container itself. We can use FFmpeg to repackage the container
       // to Matroska with a more browser-friendly mime type, or just change the container to MP4.
